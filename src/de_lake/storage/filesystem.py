@@ -77,6 +77,15 @@ class FilesystemStore:
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
 
+    def local_path(self, key: str) -> Path:
+        """Filesystem path for a key.
+
+        Only meaningful for this backend — the S3 backend has no local path.
+        Exists so tests and local tooling can read a Parquet object directly
+        without reaching into `_root`.
+        """
+        return self._path(key)
+
     def purge_temp_files(self) -> int:
         """Delete orphaned `*.tmp` files and return how many were removed.
 

@@ -62,7 +62,7 @@ class Checkpoint:
         store.atomic_write(checkpoint_key(self.source, self.unit), payload)
 
     @classmethod
-    def load(cls, store: ObjectStore, source: str, unit: str) -> "Checkpoint":
+    def load(cls, store: ObjectStore, source: str, unit: str) -> Checkpoint:
         """Return the stored checkpoint, or a fresh empty one.
 
         A missing or corrupt checkpoint yields an empty checkpoint rather than an
@@ -70,7 +70,7 @@ class Checkpoint:
         """
         try:
             payload = json.loads(store.read(checkpoint_key(source, unit)))
-        except (StoreKeyNotFound, json.JSONDecodeError, UnicodeDecodeError):
+        except StoreKeyNotFound, json.JSONDecodeError, UnicodeDecodeError:
             return cls(source=source, unit=unit)
         return cls(
             source=payload.get("source", source),

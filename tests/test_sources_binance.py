@@ -12,7 +12,7 @@ is the centre of this file.
 from __future__ import annotations
 
 import json
-from datetime import date, timezone
+from datetime import UTC, date
 
 import pytest
 
@@ -39,9 +39,15 @@ class RecordingSession:
 
 
 def _ms(iso: str) -> int:
-    return int(
-        __import__("datetime").datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp()
-    ) * 1000
+    return (
+        int(
+            __import__("datetime")
+            .datetime.fromisoformat(iso)
+            .replace(tzinfo=UTC)
+            .timestamp()
+        )
+        * 1000
+    )
 
 
 def _synthetic_day(params: dict, page_size: int) -> list[list]:
@@ -153,8 +159,15 @@ def test_page_rows_are_transposed_into_kline_column_order():
     assert row["_row_key"].startswith("BTCUSDT:")
     assert row["ticker"] == "BTCUSDT"
     assert set(row) == {
-        "_row_key", "ticker", "open_time", "close_time",
-        "open", "high", "low", "close", "volume",
+        "_row_key",
+        "ticker",
+        "open_time",
+        "close_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
     }
 
 
@@ -196,7 +209,12 @@ def test_a_404_yields_nothing():
 def test_a_ticker_binance_rejects_yields_nothing():
     # Binance answers an unknown symbol with 400. That is "no data for this
     # ticker", not a pipeline fault.
-    assert list(BinanceSource(session=StatusSession(400), ticker="NOPE").fetch("2026-01-05")) == []
+    assert (
+        list(
+            BinanceSource(session=StatusSession(400), ticker="NOPE").fetch("2026-01-05")
+        )
+        == []
+    )
 
 
 # --- configuration --------------------------------------------------------

@@ -117,8 +117,8 @@ def _to_frame(source: Source, payload: bytes):
         if frame.height == 0 or "date" not in frame.columns:
             return pl.DataFrame()
         frame = frame.with_columns(
-            pl.lit(source._ticker).alias("ticker"),  # noqa: SLF001 — single-purpose adapter
-            (pl.lit(source._ticker) + ":" + pl.col("date")).alias("_row_key"),  # noqa: SLF001
+            pl.lit(source.row_label).alias("ticker"),
+            (pl.lit(source.row_label) + ":" + pl.col("date")).alias("_row_key"),
         )
         return frame
 
@@ -172,8 +172,8 @@ __all__ = [
     "DEFAULT_CIKS",
     "DEFAULT_STOOQ_TICKERS",
     "PARTITION_COLUMNS",
-    "FilesystemStore",
     "SOURCES",
+    "FilesystemStore",
     "default_store",
     "ingest_range",
     "pending_units",

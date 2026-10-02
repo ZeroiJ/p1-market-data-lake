@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from de_lake.sources.base import RetryableSourceError
 
@@ -31,9 +31,18 @@ MINUTE_MS = 60_000
 
 # Binance's positional kline tuple, in the order the API returns it.
 KLINE_FIELDS = (
-    "open_time", "open", "high", "low", "close", "volume",
-    "close_time", "quote_volume", "trades",
-    "taker_buy_base", "taker_buy_quote", "ignore",
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_volume",
+    "trades",
+    "taker_buy_base",
+    "taker_buy_quote",
+    "ignore",
 )
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -45,7 +54,7 @@ class _Empty(Exception):
 
 
 def _iso(ms: int) -> str:
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
 
 
 class BinanceSource:
@@ -55,7 +64,11 @@ class BinanceSource:
 
     def __init__(self, session, ticker: str = "BTCUSDT") -> None:
         self._session = session
-        self._ticker = ticker.upper()
+        self.ticker = ticker.upper()
+
+    @property
+    def row_label(self) -> str:
+        return self.ticker
 
     def units(self, start: date, end: date) -> list[str]:
         current = start
@@ -83,7 +96,9 @@ class BinanceSource:
     def fetch(self, unit: str) -> Iterator[tuple[str, bytes]]:
         """Yield one `(logical_name, payload)` per page of candles for `unit`."""
         day = date.fromisoformat(unit)
-        cursor_ms = int(datetime(day.year, day.month, day.day, tzinfo=timezone.utc).timestamp() * 1000)
+        cursor_ms = int(
+            datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp() * 1000
+        )
         end_ms = cursor_ms + 24 * 60 * MINUTE_MS
         page_index = 0
 
@@ -91,7 +106,7 @@ class BinanceSource:
             try:
                 rows = self._get_page(
                     {
-                        "symbol": self._ticker,
+                        "symbol": self.ticker,
                         "interval": "1m",
                         "startTime": cursor_ms,
                         "limit": PAGE_LIMIT,
@@ -105,11 +120,9 @@ class BinanceSource:
 
             # A short page means we reached the end of the day; a full page means
             # there may be more. Both are handled by the cursor advance below.
-            records = [
-                self._to_record(row) for row in rows if int(row[0]) < end_ms
-            ]
+            records = [self._to_record(row) for row in rows if int(row[0]) < end_ms]
             if records:
-                name = f"{self._ticker}:{unit}:p{page_index:04d}"
+                name = f"{self.ticker}:{unit}:p{page_index:04d}"
                 yield name, json.dumps(records, sort_keys=True).encode()
 
             last_open_ms = int(rows[-1][0])
@@ -128,8 +141,8 @@ class BinanceSource:
         return {
             # One candle per (symbol, minute) — that pair is the natural key and
             # makes re-landing the same day a no-op.
-            "_row_key": f"{self._ticker}:{open_ms}",
-            "ticker": self._ticker,
+            "_row_key": f"{self.ticker}:{open_ms}",
+            "ticker": self.ticker,
             "open_time": _iso(open_ms),
             "close_time": _iso(close_ms),
             "open": float(values["open"]),

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import polars as pl
 import pytest
@@ -7,7 +7,7 @@ from de_lake.contracts import UnknownSource, contract_for, validate
 
 
 def _ts(minute: int) -> datetime:
-    return datetime(2026, 1, 5, 0, minute, tzinfo=timezone.utc)
+    return datetime(2026, 1, 5, 0, minute, tzinfo=UTC)
 
 
 def _binance_row(**overrides) -> dict:
@@ -60,7 +60,9 @@ def test_valid_stooq_rows_pass_through():
 
 
 def test_row_missing_required_column_goes_to_quarantine_with_reason():
-    df = _binance_frame(_binance_row(_row_key="a"), _binance_row(_row_key="b", ticker=None))
+    df = _binance_frame(
+        _binance_row(_row_key="a"), _binance_row(_row_key="b", ticker=None)
+    )
     r = validate(df, "binance")
     assert r.ok.height == 1
     assert r.quarantine.height == 1
@@ -68,15 +70,24 @@ def test_row_missing_required_column_goes_to_quarantine_with_reason():
 
 
 def test_non_positive_close_is_rejected_for_binance():
-    assert validate(_binance_frame(_binance_row(close=0.0)), "binance").quarantine.height == 1
+    assert (
+        validate(_binance_frame(_binance_row(close=0.0)), "binance").quarantine.height
+        == 1
+    )
 
 
 def test_negative_volume_is_rejected():
-    assert validate(_binance_frame(_binance_row(volume=-1.0)), "binance").quarantine.height == 1
+    assert (
+        validate(_binance_frame(_binance_row(volume=-1.0)), "binance").quarantine.height
+        == 1
+    )
 
 
 def test_high_below_low_is_rejected():
-    assert validate(_binance_frame(_binance_row(high=0.1)), "binance").quarantine.height == 1
+    assert (
+        validate(_binance_frame(_binance_row(high=0.1)), "binance").quarantine.height
+        == 1
+    )
 
 
 def test_a_null_partition_key_is_rejected_rather_than_lost():
@@ -105,9 +116,7 @@ def test_unknown_source_raises():
         validate(pl.DataFrame({"_row_key": ["a"]}), "nope")
 
 
-@pytest.mark.parametrize(
-    "source", ["sec_edgar", "sec_xbrl", "binance", "stooq"]
-)
+@pytest.mark.parametrize("source", ["sec_edgar", "sec_xbrl", "binance", "stooq"])
 def test_every_registered_contract_is_reachable(source):
     assert isinstance(contract_for(source), dict)
 

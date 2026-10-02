@@ -13,7 +13,7 @@ hammering an endpoint that has already asked us to stop.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import requests
 
@@ -34,12 +34,14 @@ DEFAULT_LOOKBACK = timedelta(days=3)
 
 #: Binance and Stooq take separate ticker lists — `aapl.us` is a Stooq symbol and
 #: a nonsense Binance one. See de_lake.pipeline.sources_for.
-BINANCE_TICKERS = tuple(
-    filter(None, os.environ.get("DE_LAKE_BINANCE_TICKERS", "").split(","))
-) or DEFAULT_BINANCE_TICKERS
-STOOQ_TICKERS = tuple(
-    filter(None, os.environ.get("DE_LAKE_STOOQ_TICKERS", "").split(","))
-) or DEFAULT_STOOQ_TICKERS
+BINANCE_TICKERS = (
+    tuple(filter(None, os.environ.get("DE_LAKE_BINANCE_TICKERS", "").split(",")))
+    or DEFAULT_BINANCE_TICKERS
+)
+STOOQ_TICKERS = (
+    tuple(filter(None, os.environ.get("DE_LAKE_STOOQ_TICKERS", "").split(",")))
+    or DEFAULT_STOOQ_TICKERS
+)
 CIKS = DEFAULT_CIKS
 
 
@@ -50,7 +52,7 @@ def _session_factory():
 def _make_task(source_name: str):
     def run(**_context):
         store = default_store()
-        now = datetime.now(tz=None)
+        now = datetime.now(tz=UTC)
         start = (now - DEFAULT_LOOKBACK).date()
         end = now.date()
 
@@ -76,7 +78,8 @@ if DAG is not None:
         dag_id=DAG_ID,
         description="Ingest SEC, Binance and Stooq market data into the partitioned Parquet lake.",
         schedule="@daily",
-        start_date=datetime(2026, 10, 1),
+        # Airflow 3 requires a timezone-aware start_date; a naive one is rejected.
+        start_date=datetime(2026, 10, 1, tzinfo=UTC),
         catchup=False,
         max_active_runs=1,
         default_args={

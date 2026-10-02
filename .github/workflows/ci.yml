@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# Free and unlimited on public repositories, which is a real part of this
+# project's zero-cost design rather than an incidental choice.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (py3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install
+        run: uv sync --frozen --all-extras
+
+      - name: Test
+        run: uv run pytest -q
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --frozen --all-extras
+      - run: uvx ruff check src tests dags
+      - run: uvx ruff format --check src tests dags
+
+  # Proves the Airflow DAG parses and imports against real Airflow, not just
+  # that the file exists.
+  dag:
+    name: dag import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --frozen --all-extras
+      - name: Import the DAG
+        run: |
+          uv run python -c "
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location('dag', 'dags/ingest_market_data.py')
+          m = importlib.util.module_from_spec(spec)
+          sys.modules['dag'] = m
+          spec.loader.exec_module(m)
+          assert m.dag is not None, 'DAG not constructed'
+          print('DAG ok:', m.dag.dag_id, sorted(t.task_id for t in m.dag.tasks))
+          "
+
+  secrets:
+    name: no credentials committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan tracked files and history for secret-shaped strings
+        run: |
+          # The SEC User-Agent is an identification string and is expected.
+          # Anything key-shaped is not.
+          if git grep -nIE '(api[_-]?key|secret[_-]?key|password|passwd|token)[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9/+_-]{16,}' \
+               -- ':!uv.lock' ':!*.md'; then
+            echo "::error::a secret-shaped string is committed"
+            exit 1
+          fi
+          echo "no secret-shaped strings found"

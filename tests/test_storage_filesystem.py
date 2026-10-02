@@ -54,6 +54,7 @@ def test_different_bytes_overwrite_and_report_created(tmp_path):
     assert store.atomic_write("raw/a", b"two").created is True
     assert store.read("raw/a") == b"two"
 
+
 def test_purge_temp_files_removes_orphans_and_counts_them(tmp_path):
     store = FilesystemStore(tmp_path)
     (tmp_path / "curated").mkdir()

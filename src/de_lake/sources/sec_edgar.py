@@ -65,7 +65,9 @@ class _SecClient:
         `RetryableSourceError` for anything transient.
         """
         try:
-            response = self._session.get(url, headers={"User-Agent": self._user_agent}, timeout=30)
+            response = self._session.get(
+                url, headers={"User-Agent": self._user_agent}, timeout=30
+            )
         except (TimeoutError, ConnectionError) as exc:
             raise RetryableSourceError(f"transient failure for {url}: {exc}") from exc
 
@@ -123,7 +125,11 @@ def parse_daily_index(body: str) -> list[dict]:
         if not cik.isdigit():
             continue
 
-        filed_iso = f"{filed[:4]}-{filed[4:6]}-{filed[6:8]}" if filed.isdigit() and len(filed) == 8 else filed
+        filed_iso = (
+            f"{filed[:4]}-{filed[4:6]}-{filed[6:8]}"
+            if filed.isdigit() and len(filed) == 8
+            else filed
+        )
         accession = path.rsplit("/", 1)[-1].removesuffix(".txt")
         records.append(
             {
@@ -143,6 +149,7 @@ class SecEdgarSource:
     """Filings listed in SEC's daily index for a given calendar date."""
 
     name = "sec_edgar"
+    row_label = None
 
     def __init__(self, session, user_agent: str) -> None:
         self._client = _SecClient(session, user_agent)
@@ -153,9 +160,7 @@ class SecEdgarSource:
     def fetch(self, unit: str) -> Iterator[tuple[str, bytes]]:
         day = date.fromisoformat(unit)
         quarter = (day.month - 1) // 3 + 1
-        url = (
-            f"{DAILY_INDEX_BASE}/{day.year}/QTR{quarter}/master.{day:%Y%m%d}.idx"
-        )
+        url = f"{DAILY_INDEX_BASE}/{day.year}/QTR{quarter}/master.{day:%Y%m%d}.idx"
         try:
             body = self._client.get_text(url)
         except _Empty:
@@ -174,6 +179,7 @@ class SecXbrlSource:
     """
 
     name = "sec_xbrl"
+    row_label = None
 
     def __init__(self, session, user_agent: str, ciks: list[str]) -> None:
         self._client = _SecClient(session, user_agent)
@@ -227,4 +233,7 @@ class SecXbrlSource:
                             "start": fact.get("start"),
                             "end": fact.get("end"),
                         }
-                        yield record["_row_key"], json.dumps(record, sort_keys=True).encode()
+                        yield (
+                            record["_row_key"],
+                            json.dumps(record, sort_keys=True).encode(),
+                        )

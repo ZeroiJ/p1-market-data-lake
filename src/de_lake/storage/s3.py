@@ -33,7 +33,9 @@ class S3Store:
 
     def atomic_write(self, key: str, data: bytes) -> WriteResult:
         try:
-            existing = self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+            existing = self._client.get_object(Bucket=self._bucket, Key=key)[
+                "Body"
+            ].read()
         except Exception as exc:
             if not _is_missing(exc):
                 raise

@@ -19,7 +19,9 @@ def test_resume_skips_completed_units_and_does_the_rest(tmp_path):
     cp.save(store)
 
     reloaded = Checkpoint.load(store, "binance", "klines")
-    todo = [u for u in ["2026-01-05", "2026-01-06", "2026-01-07"] if not reloaded.is_done(u)]
+    todo = [
+        u for u in ["2026-01-05", "2026-01-06", "2026-01-07"] if not reloaded.is_done(u)
+    ]
     assert todo == ["2026-01-06", "2026-01-07"]
 
 

@@ -203,7 +203,9 @@ def _cast_plan(df: pl.DataFrame, contract: Contract) -> list[tuple[str, Any, str
 def contract_for(source: str) -> dict[str, Any]:
     """Return the canonical column -> dtype mapping for a source."""
     if source not in _CONTRACTS:
-        raise UnknownSource(f"no contract registered for {source!r}; known: {sorted(_CONTRACTS)}")
+        raise UnknownSource(
+            f"no contract registered for {source!r}; known: {sorted(_CONTRACTS)}"
+        )
     return dict(_CONTRACTS[source].columns)
 
 
@@ -216,7 +218,9 @@ def validate(df: pl.DataFrame, source: str) -> ContractResult:
     reports both rather than only the first.
     """
     if source not in _CONTRACTS:
-        raise UnknownSource(f"no contract registered for {source!r}; known: {sorted(_CONTRACTS)}")
+        raise UnknownSource(
+            f"no contract registered for {source!r}; known: {sorted(_CONTRACTS)}"
+        )
     contract = _CONTRACTS[source]
 
     if df.height == 0:

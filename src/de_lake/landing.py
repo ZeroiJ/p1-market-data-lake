@@ -40,7 +40,9 @@ def landing_key(source: str, logical_name: str, content_sha256: str) -> str:
     return f"{LANDING_PREFIX}/{source}/{content_sha256[:2]}/{content_sha256}.bin"
 
 
-def land(store: ObjectStore, source: str, logical_name: str, data: bytes) -> WriteResult:
+def land(
+    store: ObjectStore, source: str, logical_name: str, data: bytes
+) -> WriteResult:
     """Land a raw payload exactly as received.
 
     Writes the payload first, then its sidecar. That ordering matters: a crash

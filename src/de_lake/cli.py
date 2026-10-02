@@ -29,7 +29,9 @@ from de_lake.storage.filesystem import FilesystemStore
 
 
 def _store(args: argparse.Namespace) -> FilesystemStore:
-    return FilesystemStore(Path(args.store_root) if args.store_root else settings.LAKE_ROOT)
+    return FilesystemStore(
+        Path(args.store_root) if args.store_root else settings.LAKE_ROOT
+    )
 
 
 def _partition_of(key: str) -> str:
@@ -107,14 +109,22 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="de-lake", description="Browse the market data lake.")
+    parser = argparse.ArgumentParser(
+        prog="de-lake", description="Browse the market data lake."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common(sp):
-        sp.add_argument("--store-root", default=None, help="lake root (default: $DE_LAKE_ROOT)")
+        sp.add_argument(
+            "--store-root", default=None, help="lake root (default: $DE_LAKE_ROOT)"
+        )
 
-    partitions = sub.add_parser("partitions", help="list partitions with key and byte counts")
-    partitions.add_argument("--prefix", default="", help="only list keys under this prefix")
+    partitions = sub.add_parser(
+        "partitions", help="list partitions with key and byte counts"
+    )
+    partitions.add_argument(
+        "--prefix", default="", help="only list keys under this prefix"
+    )
     partitions.add_argument(
         "--limit", type=int, default=50, help="max partition rows to print (default 50)"
     )

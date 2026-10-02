@@ -39,7 +39,11 @@ class StooqSource:
 
     def __init__(self, session, ticker: str = "aapl.us") -> None:
         self._session = session
-        self._ticker = ticker.lower()
+        self.ticker = ticker.lower()
+
+    @property
+    def row_label(self) -> str:
+        return self.ticker
 
     def units(self, start: date, end: date) -> list[str]:
         current = start
@@ -50,7 +54,7 @@ class StooqSource:
         return units
 
     def fetch(self, unit: str) -> Iterator[tuple[str, bytes]]:
-        url = f"{DL_BASE}?s={self._ticker}&d1={unit}&d2={unit}&i=d"
+        url = f"{DL_BASE}?s={self.ticker}&d1={unit}&d2={unit}&i=d"
         try:
             response = self._session.get(url, headers={}, timeout=30)
         except (TimeoutError, ConnectionError) as exc:
@@ -72,4 +76,4 @@ class StooqSource:
         if not body.strip() or body.strip() == NO_DATA_BODY:
             return
 
-        yield f"{self._ticker}:{unit}", body
+        yield f"{self.ticker}:{unit}", body

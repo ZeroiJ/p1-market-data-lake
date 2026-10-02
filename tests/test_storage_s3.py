@@ -11,9 +11,9 @@ def test_s3_backend_matches_filesystem_semantics(s3_store, tmp_path):
 
 
 def test_s3_missing_key_raises_the_same_error_type(s3_store):
-    from de_lake.storage.base import StoreKeyNotFound
-
     import pytest
+
+    from de_lake.storage.base import StoreKeyNotFound
 
     with pytest.raises(StoreKeyNotFound):
         s3_store.read("raw/nope")

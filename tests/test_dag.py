@@ -44,8 +44,12 @@ def test_dag_is_constructed_with_sane_scheduling(dag_module):
     assert dag is not None
     # Airflow 3 renamed schedule_interval -> schedule.
     assert str(dag.schedule) == "@daily"
-    assert dag.catchup is False, "backfilling on deploy is how you accidentally triple-bill an API"
-    assert dag.max_active_runs == 1, "two concurrent runs would race on the same checkpoint"
+    assert dag.catchup is False, (
+        "backfilling on deploy is how you accidentally triple-bill an API"
+    )
+    assert dag.max_active_runs == 1, (
+        "two concurrent runs would race on the same checkpoint"
+    )
 
 
 def test_every_source_gets_exactly_one_task(dag_module):
@@ -66,7 +70,9 @@ def test_tasks_have_no_dependencies_between_sources(dag_module):
     # gate every other one.
     dag = dag_module.dag
     for task in dag.tasks:
-        assert task.downstream_task_ids == set(), f"{task.task_id} has unexpected dependencies"
+        assert task.downstream_task_ids == set(), (
+            f"{task.task_id} has unexpected dependencies"
+        )
 
 
 def test_every_task_callable_is_built_for_its_source(dag_module):

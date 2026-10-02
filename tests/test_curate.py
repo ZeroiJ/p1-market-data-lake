@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import dataclasses
+from datetime import UTC, datetime
 
 import polars as pl
 import pytest
@@ -8,7 +9,7 @@ from de_lake.storage.filesystem import FilesystemStore
 
 
 def _ts(minute: int) -> datetime:
-    return datetime(2026, 1, 5, 0, minute, tzinfo=timezone.utc)
+    return datetime(2026, 1, 5, 0, minute, tzinfo=UTC)
 
 
 def _row(**overrides) -> dict:
@@ -53,7 +54,7 @@ def test_rows_are_partitioned_by_ingest_date(tmp_path):
 
 def test_rows_spanning_two_days_land_in_two_partitions(tmp_path):
     store = FilesystemStore(tmp_path)
-    other = datetime(2026, 1, 6, 0, 0, tzinfo=timezone.utc)
+    other = datetime(2026, 1, 6, 0, 0, tzinfo=UTC)
     result = curate(
         store,
         "binance",
@@ -86,7 +87,11 @@ def test_stooq_partitions_on_its_date_column(tmp_path):
             "volume": [100.0],
         }
     )
-    assert curate(store, "stooq", df).ok_keys[0].startswith("curated/stooq/date=2026-01-05/")
+    assert (
+        curate(store, "stooq", df)
+        .ok_keys[0]
+        .startswith("curated/stooq/date=2026-01-05/")
+    )
 
 
 # --- idempotency ----------------------------------------------------------
@@ -187,5 +192,5 @@ def test_curating_an_empty_frame_writes_nothing(tmp_path):
 def test_curate_result_is_frozen(tmp_path):
     result = curate(FilesystemStore(tmp_path), "binance", _frame())
     assert isinstance(result, CurateResult)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         result.rows_ok = 99

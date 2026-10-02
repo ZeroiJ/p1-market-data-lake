@@ -124,7 +124,11 @@ def test_fetch_sends_an_identifying_user_agent():
 
 def test_xbrl_fetch_sends_an_identifying_user_agent():
     session = FakeSession()
-    list(SecXbrlSource(session=session, user_agent=UA, ciks=["0000320193"]).fetch("0000320193"))
+    list(
+        SecXbrlSource(session=session, user_agent=UA, ciks=["0000320193"]).fetch(
+            "0000320193"
+        )
+    )
     assert all(h.get("User-Agent") == UA for h in session.headers)
 
 
@@ -135,7 +139,13 @@ def test_fetch_parses_daily_index_rows_into_contracts():
     src = SecEdgarSource(session=FakeSession(), user_agent=UA)
     rows = [json.loads(payload) for _, payload in src.fetch("2026-01-05")]
     assert rows, "expected at least one filing from the fixture index"
-    assert set(rows[0]) >= {"_row_key", "cik", "form", "filing_date", "accession_number"}
+    assert set(rows[0]) >= {
+        "_row_key",
+        "cik",
+        "form",
+        "filing_date",
+        "accession_number",
+    }
 
 
 def test_the_daily_index_is_pipe_delimited_text_not_json():
@@ -144,8 +154,11 @@ def test_the_daily_index_is_pipe_delimited_text_not_json():
     # format the live API never returns.
     raw = _load_text("sec_daily_index_sample.idx")
     assert not raw.lstrip().startswith("{")
-    header_at = [i for i, line in enumerate(raw.splitlines())
-                 if line.startswith("CIK|Company Name|Form Type")]
+    header_at = [
+        i
+        for i, line in enumerate(raw.splitlines())
+        if line.startswith("CIK|Company Name|Form Type")
+    ]
     assert header_at, "the real header row should be present verbatim"
     # It is preceded by a metadata preamble and a dashed separator.
     assert header_at[0] > 0
@@ -253,4 +266,6 @@ def test_a_connection_reset_raises_retryable():
 def test_an_empty_index_yields_nothing_and_does_not_raise():
     header_only = "CIK|Company Name|Form Type|Date Filed|File Name\n" + "-" * 63 + "\n"
     session = FakeSession({"daily-index": _Response(200, header_only)})
-    assert list(SecEdgarSource(session=session, user_agent=UA).fetch("2026-01-05")) == []
+    assert (
+        list(SecEdgarSource(session=session, user_agent=UA).fetch("2026-01-05")) == []
+    )

@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import io
 from dataclasses import dataclass
+from datetime import date, datetime
 
 import polars as pl
 
@@ -54,12 +55,15 @@ class CurateResult:
     rows_quarantined: int
 
 
-def _partition_value(column: str, value: object) -> str:
-    """Normalise a partition value to a YYYY-MM-DD string."""
-    if isinstance(value, str):
-        return value[:10]
-    if hasattr(value, "date"):
-        return value.date().isoformat()  # type: ignore[union-attr]
+def _partition_value(value: str | date | datetime) -> str:
+    """Normalise a partition value to a YYYY-MM-DD string.
+
+    Partition columns arrive as an ISO string (SEC, Stooq) or as a datetime
+    (Binance), so both are accepted rather than forcing every source to format
+    its own dates.
+    """
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()[:10]
     return str(value)[:10]
 
 
@@ -90,7 +94,9 @@ def curate(store: ObjectStore, source: str, frame: pl.DataFrame) -> CurateResult
     if source not in PARTITION_COLUMNS:
         raise UnknownPartitionSource(f"no partition column registered for {source!r}")
     if frame.height == 0:
-        return CurateResult(ok_keys=[], quarantine_keys=[], rows_ok=0, rows_quarantined=0)
+        return CurateResult(
+            ok_keys=[], quarantine_keys=[], rows_ok=0, rows_quarantined=0
+        )
 
     partition_column = PARTITION_COLUMNS[source]
     result = validate(frame, source)
@@ -103,7 +109,7 @@ def curate(store: ObjectStore, source: str, frame: pl.DataFrame) -> CurateResult
             store,
             f"{MART_PREFIX}/{source}",
             part,
-            f"date={_partition_value(partition_column, value)}",
+            f"date={_partition_value(value)}",
         )
 
     # Mart is complete before quarantine is touched — see module docstring.
@@ -116,9 +122,7 @@ def curate(store: ObjectStore, source: str, frame: pl.DataFrame) -> CurateResult
         )
         for (value,), part in annotated.group_by(partition_column, maintain_order=True):
             partition = (
-                "date=unknown"
-                if value is None
-                else f"date={_partition_value(partition_column, value)}"
+                "date=unknown" if value is None else f"date={_partition_value(value)}"
             )
             quarantine_keys += _write_frame(
                 store, f"{QUARANTINE_PREFIX}/{source}", part, partition

@@ -16,8 +16,7 @@ So these tests exist to cover the joins, not the parts.
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
-from pathlib import Path
+from datetime import date
 
 import polars as pl
 import pytest
@@ -51,8 +50,20 @@ class Session:
         elif "klines" in url:
             start = int(params["startTime"])
             rows = [
-                [start + i * 60_000, "100", "101", "99", "100.5", "12.5",
-                 start + i * 60_000 + 59_999, "1", "1", "1", "1", "0"]
+                [
+                    start + i * 60_000,
+                    "100",
+                    "101",
+                    "99",
+                    "100.5",
+                    "12.5",
+                    start + i * 60_000 + 59_999,
+                    "1",
+                    "1",
+                    "1",
+                    "1",
+                    "0",
+                ]
                 for i in range(params["limit"])
             ]
             text = json.dumps(rows)
@@ -79,11 +90,15 @@ def store(tmp_path) -> FilesystemStore:
 
 def test_a_second_run_over_the_same_range_does_no_work(store):
     source = next(s for s in sources_for(Session) if s.name == "stooq")
-    first = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily")
+    first = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily"
+    )
     assert first["units"] == 2 and first["rows_ok"] == 2
     assert len(list(store.list_keys("curated/stooq/"))) == 2
 
-    second = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily")
+    second = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily"
+    )
     assert second["units"] == 0
     assert second["landed"] == 0
     assert second["rows_ok"] == 0
@@ -102,7 +117,9 @@ def test_the_lake_is_byte_identical_after_a_repeat_run(store, tmp_path):
 def test_resume_continues_from_a_partially_completed_range(store):
     source = next(s for s in sources_for(Session) if s.name == "stooq")
     ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 5), unit_name="daily")
-    stats = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 7), unit_name="daily")
+    stats = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 7), unit_name="daily"
+    )
     assert stats["units"] == 2, "should only process the two new days"
     assert stats["resumed"] == 1
 
@@ -114,7 +131,12 @@ def test_pending_units_lists_only_what_is_left(store):
     cp = Checkpoint.load(store, "stooq", "daily")
     cp.mark_done("2026-01-05")
     cp.save(store)
-    left = pending_units(Checkpoint.load(store, "stooq", "daily"), source, date(2026, 1, 5), date(2026, 1, 7))
+    left = pending_units(
+        Checkpoint.load(store, "stooq", "daily"),
+        source,
+        date(2026, 1, 5),
+        date(2026, 1, 7),
+    )
     assert left == ["2026-01-06", "2026-01-07"]
 
 
@@ -123,7 +145,9 @@ def test_pending_units_lists_only_what_is_left(store):
 
 def test_stooq_lands_and_curates_a_csv_payload(store):
     source = next(s for s in sources_for(Session) if s.name == "stooq")
-    stats = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily")
+    stats = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily"
+    )
     assert stats["landed"] >= 1
     assert stats["rows_ok"] == 2
     assert list(store.list_keys("curated/stooq/"))
@@ -133,7 +157,7 @@ def test_stooq_capitalised_headers_are_normalised_to_the_contract(store):
     source = next(s for s in sources_for(Session) if s.name == "stooq")
     ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily")
     key = next(k for k in store.list_keys("curated/stooq/") if k.endswith(".parquet"))
-    frame = pl.read_parquet(Path(store._root) / key)  # noqa: SLF001
+    frame = pl.read_parquet(store.local_path(key))
     assert "date" in frame.columns and "Date" not in frame.columns
     assert frame.schema["date"] == pl.String
 
@@ -142,7 +166,7 @@ def test_stooq_row_keys_are_unique_per_date(store):
     source = next(s for s in sources_for(Session) if s.name == "stooq")
     ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 6), unit_name="daily")
     keys = [
-        pl.read_parquet(Path(store._root) / k)["_row_key"].to_list()  # noqa: SLF001
+        pl.read_parquet(store.local_path(k))["_row_key"].to_list()
         for k in store.list_keys("curated/stooq/")
         if k.endswith(".parquet")
     ]
@@ -153,7 +177,9 @@ def test_stooq_row_keys_are_unique_per_date(store):
 def test_a_session_offering_only_text_still_works(store):
     # The exact shape that made Stooq silently produce nothing.
     source = next(s for s in sources_for(Session) if s.name == "stooq")
-    stats = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 5), unit_name="daily")
+    stats = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 5), unit_name="daily"
+    )
     assert stats["rows_ok"] == 1
     assert list(store.list_keys("curated/stooq/"))
 
@@ -163,7 +189,9 @@ def test_a_session_offering_only_text_still_works(store):
 
 def test_binance_lands_a_full_minute_day(store):
     source = next(s for s in sources_for(Session) if s.name == "binance")
-    stats = ingest_range(source, store, date(2026, 1, 5), date(2026, 1, 5), unit_name="klines")
+    stats = ingest_range(
+        source, store, date(2026, 1, 5), date(2026, 1, 5), unit_name="klines"
+    )
     assert stats["rows_ok"] == 1440
     assert stats["rows_quarantined"] == 0
 
@@ -180,7 +208,9 @@ def test_binance_pages_land_under_separate_raw_objects(store):
 
 def test_every_source_has_a_resume_unit_registered():
     for source in sources_for(Session):
-        assert source.name in SOURCES, f"{source.name} is missing from the pipeline registry"
+        assert source.name in SOURCES, (
+            f"{source.name} is missing from the pipeline registry"
+        )
 
 
 def test_sources_for_returns_the_four_configured_sources():
@@ -207,8 +237,10 @@ def test_sources_for_builds_one_source_per_ticker():
 def test_a_stooq_ticker_never_becomes_a_binance_source():
     # Regression: one combined ticker list produced a Binance source per Stooq
     # ticker, so `aapl.us` was requested from Binance on every run.
-    built = sources_for(Session, binance_tickers=("BTCUSDT",), stooq_tickers=("aapl.us",))
-    assert [s._ticker for s in built if s.name == "binance"] == ["BTCUSDT"]
+    built = sources_for(
+        Session, binance_tickers=("BTCUSDT",), stooq_tickers=("aapl.us",)
+    )
+    assert [s.row_label for s in built if s.name == "binance"] == ["BTCUSDT"]
 
 
 def test_a_wide_range_enumerates_a_day_per_unit():

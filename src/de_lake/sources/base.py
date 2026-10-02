@@ -35,6 +35,12 @@ class Source(Protocol):
 
     name: str
 
+    #: The symbol every row belongs to, for upstreams whose payloads do not
+    #: carry one — `aapl.us`, `BTCUSDT`. `None` for upstreams that identify each
+    #: row themselves (SEC filings carry a CIK). Declared here so downstream
+    #: code never has to reach into a source's private attributes.
+    row_label: str | None
+
     def units(self, start: date, end: date) -> list[str]:
         """Enumerate the units of work between `start` and `end`, inclusive."""
         ...

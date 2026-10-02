@@ -9,18 +9,24 @@ def _parquet_bytes(rows: int = 2) -> bytes:
     import io
 
     buffer = io.BytesIO()
-    pl.DataFrame({"_row_key": [f"k{i}" for i in range(rows)], "ticker": ["AAPL"] * rows}).write_parquet(
-        buffer
-    )
+    pl.DataFrame(
+        {"_row_key": [f"k{i}" for i in range(rows)], "ticker": ["AAPL"] * rows}
+    ).write_parquet(buffer)
     return buffer.getvalue()
 
 
 @pytest.fixture
 def lake(tmp_path):
     store = FilesystemStore(tmp_path)
-    store.atomic_write("curated/binance/date=2026-01-05/part-a.parquet", _parquet_bytes())
-    store.atomic_write("curated/binance/date=2026-01-06/part-b.parquet", _parquet_bytes())
-    store.atomic_write("curated/stooq/date=2026-01-05/part-c.parquet", _parquet_bytes(3))
+    store.atomic_write(
+        "curated/binance/date=2026-01-05/part-a.parquet", _parquet_bytes()
+    )
+    store.atomic_write(
+        "curated/binance/date=2026-01-06/part-b.parquet", _parquet_bytes()
+    )
+    store.atomic_write(
+        "curated/stooq/date=2026-01-05/part-c.parquet", _parquet_bytes(3)
+    )
     store.atomic_write("raw/binance/ab/abcd.bin", b"payload")
     return tmp_path
 
@@ -101,6 +107,7 @@ def test_no_arguments_is_a_usage_error(capsys):
 def test_unknown_subcommand_is_a_usage_error(capsys):
     assert main(["frobnicate"]) != 0
 
+
 # --- scale ----------------------------------------------------------------
 
 
@@ -110,7 +117,9 @@ def _big_lake(tmp_path, raw_count: int = 300) -> None:
         digest = f"{i:064x}"
         store.atomic_write(f"raw/binance/{digest[:2]}/{digest}.bin", b"x")
         store.atomic_write(f"raw/binance/{digest[:2]}/{digest}.bin.meta", b"y")
-    store.atomic_write("curated/binance/date=2026-01-05/part-a.parquet", _parquet_bytes())
+    store.atomic_write(
+        "curated/binance/date=2026-01-05/part-a.parquet", _parquet_bytes()
+    )
 
 
 def test_raw_objects_group_by_source_not_one_line_each(tmp_path, capsys):
@@ -132,7 +141,11 @@ def test_output_is_capped_and_says_how_many_were_hidden(tmp_path, capsys):
         )
     main(["partitions", "--store-root", str(tmp_path), "--limit", "10"])
     out = capsys.readouterr().out
-    body = [ln for ln in out.splitlines() if ln.startswith(("curated/", "raw/", "quarantine/"))]
+    body = [
+        ln
+        for ln in out.splitlines()
+        if ln.startswith(("curated/", "raw/", "quarantine/"))
+    ]
     assert len(body) == 10
     assert "more" in out.lower()
 
@@ -140,5 +153,9 @@ def test_output_is_capped_and_says_how_many_were_hidden(tmp_path, capsys):
 def test_limit_is_configurable(tmp_path, capsys):
     _big_lake(tmp_path)
     main(["partitions", "--store-root", str(tmp_path), "--limit", "1"])
-    body = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(("curated/", "raw/"))]
+    body = [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(("curated/", "raw/"))
+    ]
     assert len(body) == 1
