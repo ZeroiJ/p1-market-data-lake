@@ -19,6 +19,8 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "apache-airflow==3.3.2",
     "moto>=5.2.3",
     "pytest>=9.1.1",
+    "requests>=2.34.2",
 ]

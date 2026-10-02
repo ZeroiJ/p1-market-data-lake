@@ -62,7 +62,13 @@ class StooqSource:
         if status in _EMPTY_STATUS:
             return
 
-        body = getattr(response, "content", b"") or b""
+        # Accept either `content` (requests) or `text` (anything else). Reading
+        # only one of them made this source silently yield nothing against a
+        # session that offered the other — a failure that looks like an empty day.
+        body = getattr(response, "content", None)
+        if body is None:
+            text = getattr(response, "text", "") or ""
+            body = text.encode() if isinstance(text, str) else bytes(text)
         if not body.strip() or body.strip() == NO_DATA_BODY:
             return
 
