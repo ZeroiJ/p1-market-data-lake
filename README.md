@@ -19,12 +19,31 @@ nothing.
 `units: 0, landed: 0`, and the lake is byte-identical before and after.
 
 **Goal 2: A hard kill mid-backfill resumes without corrupting or duplicating.**
-*How I know it worked:* `SIGKILL` mid-range, re-run, and the final row count
-matches an uninterrupted run exactly.
+*How I know it worked:* `SIGKILL` mid-range, re-run, and the resulting lake is
+**byte-for-byte identical** to an uninterrupted run.
+
+> **Verified 2026-10-02** against the live Binance API, 3 days of 1-minute candles:
+>
+> | | rows | distinct row keys | raw payloads | total files | bytes |
+> | --- | --- | --- | --- | --- | --- |
+> | Uninterrupted | 4,320 | 4,320 | 6 | 4,333 | 15,054,555 |
+> | After `SIGKILL` at 2,770 rows | 2,770 | 2,770 | 4 | 2,779 | 9,679,707 |
+> | After resume | 4,320 | 4,320 | 6 | **4,333** | **15,054,555** |
+>
+> Reproduce with `uv run python scripts/resume_drill.py 3`.
 
 **Goal 3: No row is ever silently dropped.**
 *How I know it worked:* every row failing its contract lands in `quarantine/`
 with a `reason` naming the offending column, and the count is reported per run.
+
+> **Verified 2026-10-02** against the live APIs, single-day ingest:
+>
+> | Source | payloads landed | rows curated | quarantined | re-run |
+> | --- | --- | --- | --- | --- |
+> | SEC EDGAR (daily index) | 8,400 | 8,478 | 0 | `units: 0, landed: 0` |
+> | SEC XBRL (companyfacts, Apple) | 25,135 | 25,135 | 0 | `units: 0, landed: 0` |
+> | Binance BTCUSDT 1m | 2 | 1,440 | 0 | `units: 0, landed: 0` |
+> | Stooq aapl.us | — | — | — | unreachable, see below |
 
 > Zero cost was a hard constraint, not a nice-to-have. Docker Hub was unreachable
 > and Cloudflare R2 requires a payment method to enable, so the lake is built on
@@ -108,6 +127,13 @@ No code changes. No new imports.
 Three genuinely different wire formats on purpose. A pipeline that only ever
 sees JSON has tested one assumption four times.
 
+> **Stooq is not currently reachable from this network.** It answers every
+> request with a JavaScript proof-of-work challenge that must be solved in a
+> browser and posted back as a cookie. Automating that is bot-wall evasion, so
+> the source is kept — it is correct, fully tested code that works from an
+> unblocked network — but it is excluded from the live demos and the resume
+> drill. Live verification above uses SEC and Binance.
+
 ## Used tools
 
 | Layer | Choice |
@@ -142,6 +168,12 @@ Known limitations, stated rather than discovered later:
   raw and be caught at curation rather than here.
 - **S3 is tested against `moto`, not a live endpoint.** The boundary is the same
   `boto3` API, but a live-endpoint edge case remains untested.
+- **Stooq cannot be reached from here.** See above. Its tests run against a
+  verbatim fixture, so the code is verified; only its live availability is not.
+- **EDGAR landing deduplicates silently.** A daily index listing the same filing
+  twice lands once, because identical filings produce byte-identical records and
+  landing is content-addressed. That is correct, but it means `landed` (8,400)
+  is lower than `rows_ok` (8,478) for the same index.
 
 ## Design decisions
 
@@ -172,25 +204,37 @@ docs/adr/        design-decision records
 
 ## Tests
 
-147 tests, no network, no credentials, ~11 seconds.
+158 tests, no network, no credentials, ~11 seconds.
 
 | File | Tests | Covers |
 | --- | --- | --- |
-| `test_storage_*.py` | 16 | both backends, parity-tested via moto |
+| `test_storage_*.py` | 19 | both backends, parity-tested via moto, temp-file GC |
 | `test_contracts.py` | 16 | quarantine routing and per-source rules |
 | `test_landing.py` | 8 | content-addressing, atomicity, sidecar ordering |
 | `test_curate.py` | 19 | partitioning, idempotency, mart-before-quarantine |
 | `test_checkpoint.py` | 10 | resume, torn-file tolerance |
 | `test_sources_*.py` | 47 | units, pagination, retry semantics |
 | `test_pipeline.py` | 15 | the seams between modules |
-| `test_cli.py` | 12 | the lake browser |
+| `test_cli.py` | 15 | the lake browser |
 | `test_dag.py` | 11 | the DAG imported and structurally validated |
 
-Two real bugs were found by the seam tests in `test_pipeline.py`, not by any
-per-module test: `StooqSource` read `response.content` while the JSON sources
-called `.json()` (so it silently produced nothing against a `text`-only session),
-and nothing normalised Stooq's capitalised `Date,Open,...` header to the
-contract's lowercase.
+### Bugs found, and by what
+
+Unit tests passed throughout while four real bugs existed. Each was caught by
+something other than a happy-path assertion:
+
+| Bug | Caught by |
+| --- | --- |
+| `StooqSource` read `response.content` while the JSON sources called `.json()`, so it silently produced nothing against a `text`-only session | seam tests in `test_pipeline.py` |
+| Nothing normalised Stooq's capitalised `Date,Open,...` header to the contract's lowercase, so CSVs landed but never curated | the same seam tests |
+| `ingest_range` computed `resumed` *after* its loop, so every unit always looked resumed and the headline statistic was meaningless | an assertion that expected `resumed == 1` |
+| EDGAR's `master.<date>.idx` is **pipe-delimited text, not JSON**, behind a metadata preamble, a header row and a dashed separator — and `Date Filed` is `YYYYMMDD`, not ISO | **running against the live API**. The fixture had wrapped it as JSON, so the suite validated a format SEC never returns |
+
+A fifth was found by the resume drill: a `SIGKILL` between the temp write and
+`os.replace` left an orphaned `.tmp` file. `list_keys` already hid it so the
+pipeline behaved correctly, but it occupied space forever and would accumulate
+across repeated crashes on a 10 GB free-tier bucket. Now purged at the start of
+every run.
 
 ## Appendix
 
