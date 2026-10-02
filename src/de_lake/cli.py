@@ -33,12 +33,23 @@ def _store(args: argparse.Namespace) -> FilesystemStore:
 
 
 def _partition_of(key: str) -> str:
-    """Everything up to and including the final `date=` component."""
-    marker = "date="
-    if marker not in key:
-        return key
-    tail = key.split(marker, 1)[1]
-    return key[: key.rindex(marker)] + marker + tail.split("/", 1)[0]
+    """Group a key into something a human reads as one partition.
+
+    Three shapes live in the lake, and only one of them partitions by date:
+
+    - `raw/{source}/{fanout}/{sha}.bin` — content-addressed, so the "partition"
+      is the source. Reporting one line per object produced 37,000 lines for a
+      three-day SEC ingest.
+    - `curated|quarantine/{source}/date=.../...` — one group per date.
+    - anything else — its own directory.
+    """
+    parts = key.split("/")
+    if parts[0] == "raw":
+        return "/".join(parts[:2])
+    if "date=" in key:
+        head, tail = key.split("date=", 1)
+        return f"{head}date={tail.split('/', 1)[0]}"
+    return "/".join(parts[:-1]) or key
 
 
 def _cmd_partitions(args: argparse.Namespace) -> int:
@@ -52,16 +63,24 @@ def _cmd_partitions(args: argparse.Namespace) -> int:
         print("no objects in the lake (yet)")
         return 0
 
-    width = max(len(p) for p in groups)
+    ordered = sorted(groups)
+    shown = ordered[: args.limit]
+    hidden = len(ordered) - len(shown)
+
+    width = max(len(p) for p in shown)
     print(f"{'PARTITION'.ljust(width)}  {'KEYS':>5}  {'BYTES':>12}")
-    for partition in sorted(groups):
+    for partition in shown:
         entries = groups[partition]
         print(
             f"{partition.ljust(width)}  {len(entries):>5}  "
             f"{sum(size for _, size in entries):>12,}"
         )
-    total = sum(size for entries in groups.values() for _, size in entries)
-    print(f"\n{len(groups)} partitions, {sum(len(e) for e in groups.values())} keys, {total:,} bytes")
+    if hidden:
+        print(f"... and {hidden:,} more (raise --limit to see them)")
+
+    total_keys = sum(len(e) for e in groups.values())
+    total_bytes = sum(size for e in groups.values() for _, size in e)
+    print(f"\n{len(groups):,} partitions · {total_keys:,} keys · {total_bytes:,} bytes")
     return 0
 
 
@@ -96,6 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     partitions = sub.add_parser("partitions", help="list partitions with key and byte counts")
     partitions.add_argument("--prefix", default="", help="only list keys under this prefix")
+    partitions.add_argument(
+        "--limit", type=int, default=50, help="max partition rows to print (default 50)"
+    )
     add_common(partitions)
     partitions.set_defaults(func=_cmd_partitions)
 

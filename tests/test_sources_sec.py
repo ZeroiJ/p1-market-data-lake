@@ -27,6 +27,10 @@ def _load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
 
 
+def _load_text(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="latin-1")
+
+
 class FakeSession:
     """Serves fixture content and records what was requested."""
 
@@ -45,7 +49,8 @@ class FakeSession:
             if pattern in url:
                 return response(url) if callable(response) else response
         if "daily-index" in url:
-            return _Response(200, json.dumps(_load("sec_daily_index_sample.json")))
+            # Verbatim text, exactly as SEC serves it.
+            return _Response(200, _load_text("sec_daily_index_sample.idx"))
         if "submissions" in url:
             return _Response(200, json.dumps(_load("sec_submissions_sample.json")))
         if "companyfacts" in url:
@@ -133,6 +138,54 @@ def test_fetch_parses_daily_index_rows_into_contracts():
     assert set(rows[0]) >= {"_row_key", "cik", "form", "filing_date", "accession_number"}
 
 
+def test_the_daily_index_is_pipe_delimited_text_not_json():
+    # SEC serves master.<date>.idx as pipe-delimited text behind a metadata
+    # preamble. An earlier fixture wrapped it as JSON, so the suite validated a
+    # format the live API never returns.
+    raw = _load_text("sec_daily_index_sample.idx")
+    assert not raw.lstrip().startswith("{")
+    header_at = [i for i, line in enumerate(raw.splitlines())
+                 if line.startswith("CIK|Company Name|Form Type")]
+    assert header_at, "the real header row should be present verbatim"
+    # It is preceded by a metadata preamble and a dashed separator.
+    assert header_at[0] > 0
+    assert raw.splitlines()[header_at[0] + 1].startswith("---")
+
+
+def test_metadata_preamble_lines_are_not_parsed_as_filings():
+    src = SecEdgarSource(session=FakeSession(), user_agent=UA)
+    rows = [json.loads(p) for _, p in src.fetch("2026-01-05")]
+    assert rows
+    for row in rows:
+        assert row["cik"].isdigit(), f"preamble leaked into rows: {row}"
+        assert row["form"] and "|" not in row["form"]
+
+
+def test_the_dashed_separator_and_preamble_are_not_parsed_as_filings():
+    # Accession numbers legitimately contain dashes, so the check is on the CIK
+    # field — a separator or preamble line has no digits there.
+    src = SecEdgarSource(session=FakeSession(), user_agent=UA)
+    rows = [json.loads(p) for _, p in src.fetch("2026-01-05")]
+    assert rows
+    assert all(r["cik"].isdigit() and len(r["cik"]) == 10 for r in rows)
+    assert all(r["form"] and "|" not in r["form"] for r in rows)
+
+
+def test_filing_dates_are_normalised_to_iso_for_partitioning():
+    # SEC writes Date Filed as YYYYMMDD. curate partitions on filing_date and
+    # slices value[:10], which would have produced date=20260105.
+    src = SecEdgarSource(session=FakeSession(), user_agent=UA)
+    rows = [json.loads(p) for _, p in src.fetch("2026-01-05")]
+    assert all(len(r["filing_date"]) == 10 and r["filing_date"][4] == "-" for r in rows)
+    assert all(r["filing_date"] == "2026-01-05" for r in rows)
+
+
+def test_every_row_key_is_unique():
+    src = SecEdgarSource(session=FakeSession(), user_agent=UA)
+    rows = [json.loads(p) for _, p in src.fetch("2026-01-05")]
+    assert len({r["_row_key"] for r in rows}) == len(rows)
+
+
 def test_fetch_uses_the_submissions_document_for_each_filing():
     session = FakeSession()
     list(SecEdgarSource(session=session, user_agent=UA).fetch("2026-01-05"))
@@ -198,6 +251,6 @@ def test_a_connection_reset_raises_retryable():
 
 
 def test_an_empty_index_yields_nothing_and_does_not_raise():
-    empty = {"format": "CIK|Name|Form|Date|File", "rows": []}
-    session = FakeSession({"daily-index": _Response(200, json.dumps(empty))})
+    header_only = "CIK|Company Name|Form Type|Date Filed|File Name\n" + "-" * 63 + "\n"
+    session = FakeSession({"daily-index": _Response(200, header_only)})
     assert list(SecEdgarSource(session=session, user_agent=UA).fetch("2026-01-05")) == []

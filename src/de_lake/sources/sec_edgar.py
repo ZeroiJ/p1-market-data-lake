@@ -58,7 +58,12 @@ class _SecClient:
         self._session = session
         self._user_agent = user_agent
 
-    def get_json(self, url: str):
+    def _response_text(self, url: str) -> str:
+        """Fetch `url`, returning body text, or raising the right signal.
+
+        Returns None-free: raises `_Empty` for a legitimately absent unit and
+        `RetryableSourceError` for anything transient.
+        """
         try:
             response = self._session.get(url, headers={"User-Agent": self._user_agent}, timeout=30)
         except (TimeoutError, ConnectionError) as exc:
@@ -73,7 +78,65 @@ class _SecClient:
         text = getattr(response, "text", "") or ""
         if not text.strip():
             raise _Empty(url)
-        return json.loads(text)
+        return text
+
+    def get_json(self, url: str):
+        return json.loads(self._response_text(url))
+
+    def get_text(self, url: str) -> str:
+        """Return raw body text for the non-JSON SEC endpoints."""
+        return self._response_text(url)
+
+
+_INDEX_HEADER = "CIK|Company Name|Form Type|Date Filed|File Name"
+
+
+def parse_daily_index(body: str) -> list[dict]:
+    """Parse an EDGAR ``master.<date>.idx`` file into contract-shaped records.
+
+    The file is pipe-delimited text, not JSON, and it opens with a metadata
+    preamble (Description / Last Data Received / FTP lines), a real header row
+    and a dashed separator. All three have to be skipped, or they parse as
+    filings. ``Date Filed`` is ``YYYYMMDD`` upstream and is normalised to ISO
+    here, because ``curate`` partitions on the first 10 characters of this
+    column and ``20260105`` would otherwise become a ``date=20260105``
+    partition that sorts nowhere near its neighbours.
+    """
+    records: list[dict] = []
+    started = False
+
+    for raw in body.splitlines():
+        line = raw.rstrip("\r")
+        if not started:
+            if line.startswith(_INDEX_HEADER):
+                started = True
+            continue
+
+        if set(line) <= {"-"} or not line.strip():
+            continue
+
+        fields = line.split("|")
+        if len(fields) < 5:
+            continue
+
+        cik, name, form, filed, path = (f.strip() for f in fields[:5])
+        if not cik.isdigit():
+            continue
+
+        filed_iso = f"{filed[:4]}-{filed[4:6]}-{filed[6:8]}" if filed.isdigit() and len(filed) == 8 else filed
+        accession = path.rsplit("/", 1)[-1].removesuffix(".txt")
+        records.append(
+            {
+                # One filing per (CIK, document path) — the natural key.
+                "_row_key": f"{cik.zfill(10)}:{accession}",
+                "cik": cik.zfill(10),
+                "entity_name": name,
+                "form": form,
+                "filing_date": filed_iso,
+                "accession_number": accession,
+            }
+        )
+    return records
 
 
 class SecEdgarSource:
@@ -94,23 +157,11 @@ class SecEdgarSource:
             f"{DAILY_INDEX_BASE}/{day.year}/QTR{quarter}/master.{day:%Y%m%d}.idx"
         )
         try:
-            index = self._client.get_json(url)
+            body = self._client.get_text(url)
         except _Empty:
             return
 
-        for row in index.get("rows", []):
-            fields = row.split("|")
-            if len(fields) < 5:
-                continue
-            cik, _name, form, filed, _path = fields[:5]
-            record = {
-                "_row_key": f"{cik}:{fields[4]}",
-                "cik": cik.zfill(10),
-                "entity_name": fields[1].strip(),
-                "form": form.strip(),
-                "filing_date": filed.strip(),
-                "accession_number": fields[4].rsplit("/", 1)[-1].removesuffix(".txt"),
-            }
+        for record in parse_daily_index(body):
             yield record["_row_key"], json.dumps(record, sort_keys=True).encode()
 
 

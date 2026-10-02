@@ -100,3 +100,45 @@ def test_no_arguments_is_a_usage_error(capsys):
 
 def test_unknown_subcommand_is_a_usage_error(capsys):
     assert main(["frobnicate"]) != 0
+
+# --- scale ----------------------------------------------------------------
+
+
+def _big_lake(tmp_path, raw_count: int = 300) -> None:
+    store = FilesystemStore(tmp_path)
+    for i in range(raw_count):
+        digest = f"{i:064x}"
+        store.atomic_write(f"raw/binance/{digest[:2]}/{digest}.bin", b"x")
+        store.atomic_write(f"raw/binance/{digest[:2]}/{digest}.bin.meta", b"y")
+    store.atomic_write("curated/binance/date=2026-01-05/part-a.parquet", _parquet_bytes())
+
+
+def test_raw_objects_group_by_source_not_one_line_each(tmp_path, capsys):
+    # Regression: every raw object became its own "partition", so a real lake
+    # printed 37,000 lines instead of a handful.
+    _big_lake(tmp_path)
+    main(["partitions", "--store-root", str(tmp_path)])
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("raw/")]
+    assert len(lines) == 1
+    assert lines[0].startswith("raw/binance")
+    assert "600" in lines[0], "300 payloads + 300 sidecars, counted as keys"
+
+
+def test_output_is_capped_and_says_how_many_were_hidden(tmp_path, capsys):
+    _big_lake(tmp_path)
+    for day in range(1, 120):
+        FilesystemStore(tmp_path).atomic_write(
+            f"curated/stooq/date=2026-01-{day:03d}/part-x.parquet", _parquet_bytes()
+        )
+    main(["partitions", "--store-root", str(tmp_path), "--limit", "10"])
+    out = capsys.readouterr().out
+    body = [ln for ln in out.splitlines() if ln.startswith(("curated/", "raw/", "quarantine/"))]
+    assert len(body) == 10
+    assert "more" in out.lower()
+
+
+def test_limit_is_configurable(tmp_path, capsys):
+    _big_lake(tmp_path)
+    main(["partitions", "--store-root", str(tmp_path), "--limit", "1"])
+    body = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(("curated/", "raw/"))]
+    assert len(body) == 1
