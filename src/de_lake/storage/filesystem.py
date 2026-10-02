@@ -76,3 +76,24 @@ class FilesystemStore:
 
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
+
+    def purge_temp_files(self) -> int:
+        """Delete orphaned `*.tmp` files and return how many were removed.
+
+        `atomic_write` renames rather than copies, so a hard kill between the
+        temp write and the `os.replace` leaves a `.tmp` behind. `list_keys`
+        already hides these, so the pipeline behaves correctly without this —
+        they just occupy space forever. Repeated crashes therefore accumulate
+        orphans, and on a 10 GB free-tier bucket that eventually matters.
+
+        Safe because a live temp file belongs to an in-flight write on this same
+        path; any temp file found at startup is by definition abandoned.
+
+        S3Store has no equivalent: a single `put_object` creates no temp file.
+        """
+        removed = 0
+        for path in self._root.rglob(f"*{_TMP_SUFFIX}"):
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed

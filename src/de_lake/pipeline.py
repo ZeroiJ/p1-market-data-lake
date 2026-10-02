@@ -56,6 +56,14 @@ def ingest_range(
     caller — or the CLI — can report something other than "it ran".
     """
     unit_name = unit_name or SOURCES.get(source.name, ("units", "date"))[0]
+
+    # Clear temp files abandoned by a previous hard kill before adding more.
+    purge = getattr(store, "purge_temp_files", None)
+    if callable(purge):
+        orphans = purge()
+        if orphans:
+            log.info("removed %d orphaned temp file(s) from a previous run", orphans)
+
     checkpoint = Checkpoint.load(store, source.name, unit_name)
 
     stats = {"units": 0, "landed": 0, "rows_ok": 0, "rows_quarantined": 0, "resumed": 0}
